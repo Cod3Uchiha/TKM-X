@@ -1,8 +1,0 @@
-{
-  "framework": "nextjs",
-  "functions": {
-    "app/api/mcp/route.ts": {
-      "maxDuration": 300
-    }
-  }
-}

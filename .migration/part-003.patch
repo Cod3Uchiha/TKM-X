@@ -1,0 +1,135 @@
+= () => {
+-        let version
+-        try {
+-            let a = fetchJson('https://web.whatsapp.com/check-update?version=1&platform=web')
+-            version = [a.currentVersion.replace(/[.]/g, ', ')]
+-        } catch {
+-            version = [2, 2204, 13]
+-        }
+-        return version
+-    }
+-    let QR_GENERATE = "invalid";
+-    const msgRetryCounterMap = MessageRetryMap || {}
++    const store = createMemoryStore({ maxMessagesPerChat: 150 });
++    require('events').EventEmitter.defaultMaxListeners = 600;
++    const msgRetryCounterMap = {}
+     async function syncdb() {
+         let thumbbuffer = await getBuffer(THUMB_IMAGE)
+         const ChangePic = __dirname + "/assets/SocialLogo.png"
+         await writeFile(ChangePic, thumbbuffer);
+         global.log0 = fs.readFileSync(__dirname + "/assets/SocialLogo.png"); //ur logo pic
+-        const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/auth_info_baileys/')
+-        const Void = VoidConnect({
+-            logger: pino({ level: 'fatal' }),
+-            printQRInTerminal: true,
+-            browser: ['Secktor', 'safari', '1.0.0'],
+-            fireInitQueries: false,
+-            shouldSyncHistoryMessage: false,
+-            downloadHistory: false,
+-            syncFullHistory: false,
+-            generateHighQualityLinkPreview: true,
+-            auth: state,
+-            version: getVersionWaweb() || [2, 2242, 6],
+-            getMessage: async key => {
+-                if (store) {
+-                    const msg = await store.loadMessage(key.remoteJid, key.id, undefined)
+-                    return msg.message || undefined
+-                }
+-                return {
+-                    conversation: 'An Error Occurred, Repeat Command!'
+-                }
+-            }
+-        })
+-        store.bind(Void.ev)
+-setInterval(() => {
+-    store.writeToFile(__dirname+"/store.json");
+-  }, 30 * 1000);
++        const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
++        let version;
++        try {
++          ({ version } = await fetchLatestBaileysVersion());
++          console.log(`Using WhatsApp Web version ${version.join('.')}`);
++        } catch (error) {
++          console.warn('Could not fetch the latest WhatsApp Web version; using Baileys defaults.');
++        }
++
++        const socketOptions = {
++          logger: pino({ level: 'silent' }),
++          browser: Browsers?.macOS ? Browsers.macOS('Desktop') : ['KING VAJIRA MD', 'Desktop', '7.0.0'],
++          shouldSyncHistoryMessage: () => false,
++          syncFullHistory: false,
++          generateHighQualityLinkPreview: true,
++          markOnlineOnConnect: false,
++          auth: state,
++          msgRetryCounterMap,
++          getMessage: async (key) => {
++            const stored = await store.loadMessage(key.remoteJid, key.id);
++            return stored?.message;
++          },
++        };
++        if (version) socketOptions.version = version;
++
++        const Void = VoidConnect(socketOptions);
++        store.bind(Void.ev);
++
++        if (!state.creds.registered) {
++          const phoneNumber = String(Config.pairingNumber || '').replace(/\D/g, '');
++          if (phoneNumber) {
++            setTimeout(async () => {
++              try {
++                const code = await Void.requestPairingCode(phoneNumber);
++                console.log(`PAIRING CODE: ${code.match(/.{1,4}/g)?.join('-') || code}`);
++                console.log('WhatsApp > Linked devices > Link a device > Link with phone number.');
++              } catch (error) {
++                console.error('Could not request pairing code:', error.message);
++              }
++            }, 2500);
++          } else {
++            console.log('Set PAIRING_NUMBER in config.env, then restart to receive a pairing code.');
++          }
++        }
+         Void.ev.on('messages.upsert', async chatUpdate => {
+             const mek = chatUpdate.messages[0]
+             if (!mek.message) return
+             if(mek.message.viewOnceMessageV2) return
+             mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message
+-            if(mek.key && mek.key.remoteJid === 'status@broadcast'  && Config.auto_read_status==='true'){
++            if(mek.key && mek.key.remoteJid === 'status@broadcast'  && isEnabled(Config.auto_read_status)){
+             await Void.readMessages([mek.key])    
+ 	    }
+ 	   const botNumber = await Void.decodeJid(Void.user.id)
+@@ -130,7 +188,7 @@ function _0x5159(){const _0x2791e6=['30rTKhCo','input','stateObject','caption','
+                 if (!citel.message) return
+                 if(citel.isBaileys) return
+                 if (citel.chat.endsWith("broadcast")) return;
+-                if (Config.alwaysonline==='true') {
++                if (isEnabled(Config.alwaysonline)) {
+                     Void.sendPresenceUpdate('available', citel.chat)
+                 }
+                 var { body } = citel
+@@ -139,17 +197,18 @@ function _0x5159(){const _0x2791e6=['30rTKhCo','input','stateObject','caption','
+                 if (body[1] && body[1] == " ") body = body[0] + body.slice(2);
+ 		if(await isNumber(body[0]) == true ) body = "." + body[0]    
+                 let icmd = body ? prefixRegex.test(body[0]) : false;
+-		 if (Config.readmessage==="true" && icmd) {
++		 if (isEnabled(Config.readmessage) && icmd) {
+                     await Void.readMessages([mek.key])
+                 }
+                      const args = citel.body ? body.trim().split(/ +/).slice(1) : null;               
+-                const hgg = botNumber.split('@')[0]
+                 const quoted = citel.quoted ? citel.quoted : citel;
+                 const mime = (quoted.msg || quoted).mimetype || "";
+-		let devss = '2347039570336'
+-                if (citel.chat === "120363169492655114@g.us" && citel.sender!=='2347039570336@s.whatsapp.net') return
+-                let isCreator = [ hgg,devss,...global.owner].map((v) => v.replace(/[^0-9]/g) + "@s.whatsapp.net").includes(citel.sender);
+-                if (!isCreator && Config.disablepm === 'true' && icmd && !citel.isGroup) return
++                const configuredOwnerNumbers = new Set(global.owner.map((value) => String(value).replace(/\D/g, '')).filter(Boolean));
++                const senderNumbers = [citel.sender, citel.senderAlt]
++                  .filter(Boolean)
++                  .map((value) => String(value).split('@')[0].replace(/\D/g, ''));
++                let isCreator = Boolean(citel.fromMe) || senderNumbers.some((value) => configuredOwnerNumbers.has(value));
++                if (!isCreator && isEnabled(Config.disablepm) && icmd && !citel.isGroup) return
+                 if (!isCreator && Config.WORKTYPE === 'private') return
+ 		if(!isCreator){
+                 let checkban = await sck1.findOne({ id: citel.sender }) || await sck1.updateOne({ id: citel.sender }, { name: citel.pushName})
+@@ -161,7 +220,7 @@ function _0x5159(){const _0x2791e6=['30rTKhCo','input',

@@ -1,0 +1,184 @@
+: env('PREFIX', '.'),
++  prefix: env('PREFIX', '.'),
++  warncount: Number(env('WARN_COUNT', '3')) || 3,
++  disablepm: bool('DISABLE_PM'),
++  levelupmessage: bool('LEVEL_UP_MESSAGE'),
++  antilink: env('ANTILINK_VALUES', 'chat.whatsapp.com'),
++  antilinkaction: env('ANTILINK_ACTION', 'remove'),
++  BRANCH: env('BRANCH', 'main'),
++  ALIVE_MESSAGE: env('ALIVE_MESSAGE', ''),
++  autobio: bool('AUTO_BIO'),
++  OPENAI_API_KEY: env('OPENAI_API_KEY', ''),
++  heroku: bool('HEROKU'),
++  HEROKU: {
++    HEROKU: bool('HEROKU'),
++    API_KEY: env('HEROKU_API_KEY', ''),
++    APP_NAME: env('HEROKU_APP_NAME', ''),
++  },
++  VERSION: env('VERSION', '7.0.0-rc13'),
++  LANG: env('THEME', 'VAJIRA'),
++  WORKTYPE: env('WORKTYPE', 'public'),
++};
+diff --git a/lib/baileys-compat.js b/lib/baileys-compat.js
+new file mode 100644
+index 0000000..e4835d0
+--- /dev/null
++++ b/lib/baileys-compat.js
+@@ -0,0 +1,16 @@
++'use strict';
++
++let baileysApi;
++
++function setBaileys(api) {
++  baileysApi = api;
++}
++
++function getBaileys() {
++  if (!baileysApi) {
++    throw new Error('Baileys has not been initialized yet. Start the bot through lib/client.js.');
++  }
++  return baileysApi;
++}
++
++module.exports = { setBaileys, getBaileys };
+diff --git a/lib/client.js b/lib/client.js
+index 9b9025a..4946802 100644
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1,3 +1,4 @@
++;(async () => {
+ const pino = require('pino')
+ const Config = require('../config');
+ const { Boom } = require("@hapi/boom");
+@@ -13,18 +14,39 @@ const events = require('./plugin')
+ const { exec, spawn, execSync } = require("child_process");
+ const PhoneNumber = require('awesome-phonenumber')
+ const { imageToWebp, videoToWebp, writeExifImg, writeExifVid } = require('./exif')
+-const { default: VoidConnect, BufferJSON,generateLinkPreviewIfRequired, WA_DEFAULT_EPHEMERAL, proto, generateWAMessageContent, generateWAMessage, AnyMessageContent, prepareWAMessageMedia, areJidsSameUser, getContentType, downloadContentFromMessage, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, MessageRetryMap, generateForwardMessageContent, generateWAMessageFromContent, generateMessageID, makeInMemoryStore, jidDecode } = require("@sampandey001/baileys")
++const baileys = await import('@whiskeysockets/baileys');
++const { setBaileys } = require('./baileys-compat');
++setBaileys(baileys);
++const VoidConnect = baileys.default || baileys.makeWASocket;
++const {
++  proto,
++  prepareWAMessageMedia,
++  downloadContentFromMessage,
++  DisconnectReason,
++  useMultiFileAuthState,
++  fetchLatestBaileysVersion,
++  generateForwardMessageContent,
++  generateWAMessageFromContent,
++  jidDecode,
++  Browsers,
++} = baileys;
++const { createMemoryStore } = require('./memory-store');
++const qrcode = require('qrcode-terminal');
+ const util = require("util");
+ const Levels = require("discord-xp");
+ function isNumber(input) {
+   return /^\d+(\.\d+)?$/.test(input);
+ }
+-try {
++const isEnabled = (value) => value === true || String(value).trim().toLowerCase() === 'true';
++if (mongodb) {
++  try {
+     Levels.setURL(mongodb);
+-    console.log(" Connected to the KING VAJIRA MD 📡 DEPLOY BY KING VAJIRA 👩‍💻")
+-} catch {
+-    console.log("Could not connect with Mongodb please provide accurate uri check video for more inofo❌\nhttps://youtu.be/7YWI50BDO5op")
+-    process.exit(0)
++    console.log('MongoDB configuration loaded.');
++  } catch (error) {
++    console.warn('MongoDB features are disabled:', error.message);
++  }
++} else {
++  console.warn('MONGODB_URI is empty. Database-backed commands may not work.');
+ }
+ const { sck1, RandomXP, sck, plugindb, card } = require("../lib");
+ const chalk = require("chalk");
+@@ -36,89 +58,125 @@ const { smsg } = require('../lib/myfuncn')
+ const { formatp, formatDate, getTime, clockString, runtime, fetchJson, jsonformat, GIFBufferToVideoBuffer, getSizeMedia, generateMessageTag, fancytext } = require('../lib')
+ const speedofbot = require("performance-now");
+ global.db = JSON.parse(fs.readFileSync(__dirname + "/database.json"));
++global.db.users ||= {};
++global.db.chats ||= {};
++global.db.sticker ||= {};
++global.db.database ||= {};
++global.db.game ||= {};
++global.db.others ||= { vote: [] };
++const localDbSaveTimer = setInterval(() => {
++  try {
++    fs.writeFileSync(__dirname + "/database.json", JSON.stringify(global.db, null, 2));
++  } catch (error) {
++    console.warn('Could not save local database:', error.message);
++  }
++}, 10000);
++localDbSaveTimer.unref?.();
+ var CryptoJS = require("crypto-js");
+ var prefixRegex = Config.prefix === "false" || Config.prefix === "null" ? "^" : new RegExp('^[' + Config.HANDLERS + ']');
+-let cc = Config.sessionName.replace(/VAJIRA;;;/g, "");
+-async function MakeSession(){
+-if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
+-    if(cc.length<30){
+-    const axios = require('axios');
+-    let { data } = await axios.get('https://paste.c-net.org/'+cc)
+-    await fs.writeFileSync(__dirname + '/auth_info_baileys/creds.json', atob(data), "utf8")    
+-    } else {
+-	 var c = atob(cc)
+-         await fs.writeFileSync(__dirname + '/auth_info_baileys/creds.json', c, "utf8")    
++const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
++
++async function MakeSession() {
++  await fs.ensureDir(AUTH_DIR);
++  const credsPath = path.join(AUTH_DIR, 'creds.json');
++  if (fs.existsSync(credsPath)) return;
++
++  let session = String(Config.sessionName || '').trim().replace(/^VAJIRA;;;/, '');
++  if (!session) return;
++
++  try {
++    if (session.length < 80 && !session.startsWith('{')) {
++      const { data } = await axios.get(`https://paste.c-net.org/${session}`, { timeout: 15000 });
++      session = String(data).trim();
+     }
++
++    const decoded = session.startsWith('{')
++      ? session
++      : Buffer.from(session, 'base64').toString('utf8');
++    const parsed = JSON.parse(decoded);
++    const creds = parsed.creds || parsed;
++    await fs.writeJson(credsPath, creds, { spaces: 2 });
++    console.log('Imported SESSION_ID credentials.');
++  } catch (error) {
++    console.warn('SESSION_ID could not be imported. Pair the account with PAIRING_NUMBER instead.');
++  }
+ }
+-}
+-MakeSession()
++
++await MakeSession();
+ setTimeout(() => {
+     const moment = require('moment-timezone')
+     async function main() {
+ 	if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
+ 	    
+          }
+-	try{
++if (mongodb) {
++      try {
+         await mongoose.connect(mongodb);
+-	} catch {
+-		console.log('Could not connect with Mongodb.\nPlease visit https://secktorbot.tech/wiki')
+-	}
++      } catch (error) {
++        console.warn('Could not connect to MongoDB:', error.message);
++      }
++    }
+     }
+     main()
+     //========================================================================================================================================
+-    const store = makeInMemoryStore({
+-        logger: pino().child({ level: "silent", stream: "store" }),
+-    });
+-    require("events").EventEmitter.defaultMaxListeners = 600;
+-    const getVersionWaweb 

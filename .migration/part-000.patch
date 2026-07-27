@@ -1,0 +1,201 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..5b2386e
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,5 @@
++node_modules/
++config.env
++lib/auth_info_baileys/
++*.log
++.pm2/
+diff --git a/.npmrc b/.npmrc
+new file mode 100644
+index 0000000..ade83cb
+--- /dev/null
++++ b/.npmrc
+@@ -0,0 +1,5 @@
++legacy-peer-deps=true
++bin-links=false
++omit=optional
++fund=false
++audit=false
+diff --git a/BAILEYS7-MIGRATION.md b/BAILEYS7-MIGRATION.md
+new file mode 100644
+index 0000000..33b4587
+--- /dev/null
++++ b/BAILEYS7-MIGRATION.md
+@@ -0,0 +1,23 @@
++# Baileys 7 migration changes
++
++This Termux build targets `@whiskeysockets/baileys` `^7.0.0-rc13` on Node.js 20 or newer.
++
++Implemented changes:
++
++- Loads the ESM-only Baileys package from the existing CommonJS bot through dynamic `import()`.
++- Replaces removed protobuf `.fromObject()` calls with `.create()`.
++- Replaces the removed built-in memory store with a small event-backed message/contact store.
++- Uses `useMultiFileAuthState`, pairing-code login, QR fallback, credential updates and reconnect handling.
++- Handles Baileys 7 LID/PN alternate fields for owner and group-admin checks.
++- Removes the original embedded WhatsApp session, public MongoDB passwords and hard-coded developer-owner number.
++- Removes the unused `wa-sticker-formatter` dependency that pulled native `sharp` builds on Termux.
++- Repairs corrupted plugin-manager/updater files and prevents the updater from overwriting this migration.
++- Initializes local JSON state correctly and uses one database-save timer instead of creating one per message.
++
++Validation performed:
++
++- All JavaScript source files pass `node --check` through `npm run check`.
++- Project JSON files parse successfully.
++- No old Baileys fork imports, `makeInMemoryStore`, or protobuf `.fromObject()` calls remain.
++
++A complete dependency installation was not executed in the build sandbox because registry resolution timed out. Run `bash termux-setup.sh` in Termux to install the dependencies on the target device.
+diff --git a/Main/vajira.js b/Main/vajira.js
+index e9ff02d..985cb2b 100644
+--- a/Main/vajira.js
++++ b/Main/vajira.js
+@@ -1,6 +1,2 @@
+-//අනේ හුකපන් පොන්නයො. උබ පොන්නයෙක් කියල පිලිගනිම් .
+-//ඕන්නැති හුත්තක් නෑ හම එකකටම රින්ගනව වෙන වැඩ නැද්ද පකයට 
+-//ගිහින් වැඩක් බලාගනිම් හුත්තෝ වදයක් නොවි.
+-🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣🤣
+-
+-  //✅GENARATED BY VAJIRA✅
++// Placeholder retained from the original project.
++module.exports = 'KING VAJIRA MD';
+diff --git a/README.md b/README.md
+index f509edd..49b7f90 100644
+--- a/README.md
++++ b/README.md
+@@ -55,13 +55,13 @@
+ 
+ <b><details><summary>𝗠𝗢𝗡𝗚𝗢𝗗𝗕 𝗨𝗥𝗟𝗦</summary><br>
+ 
+- 1)     mongodb+srv://vajirabot1:vajirabot1@cluster0.j0d7xng.mongodb.net/?retryWrites=true&w=majority
++ 1)     mongodb+srv://USERNAME:PASSWORD@YOUR-CLUSTER.mongodb.net/DATABASE
+ 
+- 2)     mongodb+srv://vajira:vajira@cluster0.hzwqrqq.mongodb.net/?retryWrites=true&w=majority
++ 2)     mongodb+srv://USERNAME:PASSWORD@YOUR-CLUSTER.mongodb.net/DATABASE
+ 
+- 3)     mongodb+srv://Suhail_Md:Suhail_Md@cluster1.0tlyzhm.mongodb.net/?retryWrites=true&w=majority
++ 3)     mongodb+srv://USERNAME:PASSWORD@YOUR-CLUSTER.mongodb.net/DATABASE
+ 
+- 4)     mongodb+srv://salmanahmad:s4salmanyt@cluster0.szcj2eo.mongodb.net/?retryWrites=true&w=majority
++ 4)     mongodb+srv://USERNAME:PASSWORD@YOUR-CLUSTER.mongodb.net/DATABASE
+ 
+ </details>
+ 
+diff --git a/TERMUX.md b/TERMUX.md
+new file mode 100644
+index 0000000..1ed1aea
+--- /dev/null
++++ b/TERMUX.md
+@@ -0,0 +1,60 @@
++# Termux deployment — Baileys 7 RC13
++
++Keep the project in Termux home (`$HOME`), not directly in shared Android storage. Android shared storage can break npm links and executable permissions.
++
++## 1. Extract into Termux home
++
++```bash
++termux-setup-storage
++pkg update -y
++pkg install -y unzip
++cd "$HOME"
++rm -rf KING-VAJIRA-MD-Baileys7-Termux
++unzip "$HOME/storage/downloads/KING-VAJIRA-MD-Baileys7-Termux.zip"
++cd KING-VAJIRA-MD-Baileys7-Termux
++```
++
++## 2. Install and configure
++
++```bash
++bash termux-setup.sh
++nano config.env
++```
++
++Set these two values in `config.env` using international format without `+`, spaces, or dashes:
++
++```env
++PAIRING_NUMBER=2637XXXXXXXX
++OWNER_NUMBER=2637XXXXXXXX
++```
++
++MongoDB is optional for startup, but database-backed commands need your own `MONGODB_URI`.
++
++## 3. Start and pair
++
++```bash
++npm run check
++npm start
++```
++
++The terminal prints a pairing code. In WhatsApp, open **Linked devices → Link a device → Link with phone number**, then enter the code.
++
++## Keep it running
++
++After pairing, stop the foreground process with `Ctrl+C`, then run:
++
++```bash
++termux-wake-lock
++npm run start:pm2
++npx pm2 save
++```
++
++Useful commands:
++
++```bash
++npx pm2 logs king-vajira-md
++npx pm2 restart king-vajira-md
++npx pm2 stop king-vajira-md
++```
++
++Authentication is stored in `lib/auth_info_baileys/`. Keep that directory private and back it up before replacing the project.
+diff --git a/app.json b/app.json
+index 3962911..561c403 100644
+--- a/app.json
++++ b/app.json
+@@ -70,6 +70,10 @@
+   "description": "Enter your desired prefix for bot.",
+       "value": "."
+   },
++  "PAIRING_NUMBER": {
++    "description": "WhatsApp number for pairing code, in international format without +",
++    "value": ""
++  },
+   "OWNER_NUMBER": {
+     "description": "The phone numbers of the users who you want to be admin for the bot (should be in international format without + and multiple numbers must be separated by a comma \",\")",
+        "value": "put your number"
+@@ -84,7 +88,7 @@
+   },
+   "MONGODB_URI": {
+     "description": "A secret String for Mongodb Connection.(Required),change for better experience",
+-    "value": "mongodb+srv://vajirabot1:vajirabot1@cluster0.j0d7xng.mongodb.net/?retryWrites=true&w=majority"
++    "value": ""
+   },
+     "THEME": {
+     "description": "Put the theme name you want to use. Avilable themes are IZUKU,ZEROTWO,NEZUKO,LUFFY,GOKU and many more..",
+diff --git a/config.js b/config.js
+index d2052af..58a2344 100644
+--- a/config.js
++++ b/config.js
+@@ -1,58 +1,62 @@
+-const fs = require('fs-extra')
+-if (fs.existsSync('config.env')) require('dotenv').config({ path: __dirname+'/config.env' })
++const fs = require('fs-extra');
++const path = require('path');
+ 
++const envFile = path.join(__dirname, 'config.env');
++if (fs.existsSync(envFile)) require('dotenv').config({ path: envFile });
+ 
+-//═══════[Required Variables]════════\\
+-global.owner = process.env.OWNER_NUMBER.split(",")
+-global.mongodb = process.env.MONGODB_URI || "mongodb+srv://vajirabot1:vajirabot1@cluster0.j0d7xng.mongodb.net/?retryWrites=true&w=majority"
+-global.port= process.env.PORT || 5000
+-global.email = 'parolly99@gmail.com'
+-global.github = 'https://github.com/vajirabot1/KING-VAJIRA-MD'
+-global.location = 'Nigeria'
+-global.gurl = 'https://instagram.com/' // add your username
+-global.sudo = process.env.SUDO || '2348145317097'
+-global.devs = '94719199757';
+-global.website = 'https://github.com/vajirabot1/KING-VAJIRA-MD' //wa.me/+25000000000000
+-global.THUMB_IMAGE
