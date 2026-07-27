@@ -1,0 +1,29 @@
+{
+  "name": "github-actions-cleaner-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A private MCP server for previewing and deleting GitHub Actions artifacts.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "mcp-handler": "1.1.0",
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
